@@ -102,7 +102,7 @@ class AudioTransform:
         return self._generate_all_notes(note)
 
 if __name__ == "__main__":
-    with open('file.wav', 'rb') as f:
+    with open('sound.wav', 'rb') as f:
         file = BytesIO(f.read())
     a = AudioTransform(file)
     result = a.process_audio()
