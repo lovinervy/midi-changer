@@ -9,12 +9,8 @@ from scipy.io import wavfile
 from scipy.fft import fft
 from scipy.signal import resample
 from pydub import AudioSegment
-import librosa
-import noisereduce
 
-# parameters: dict[str, list[str]] = {
-#     "ogg": ["-c:a", "libopus", "-af", 'asetrate={{rate}},aresample=48000']
-# }
+
 
 class AudioTransform:
     notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
@@ -57,40 +53,7 @@ class AudioTransform:
 
         return freq
 
-    def _apply_filter(self, data: NDArray, rate: int):
-        # Применяем высокочастотный фильтр для удаления низкочастотных шумов
-        sos1 = scipy.signal.butter(10, 20, 'hp', fs=rate, output='sos')
-        sos2 = scipy.signal.butter(5, 500, 'hp', fs=rate, output='sos')
-        sos3 = scipy.signal.butter(5, 1000, 'hp', fs=rate, output='sos')
-
-        filtered = scipy.signal.sosfilt(sos1, data)
-        filtered = scipy.signal.sosfilt(sos2, filtered)
-        filtered = scipy.signal.sosfilt(sos3, filtered)
-        return filtered
-
-    def _reduce_noise(self, data: NDArray, rate: int):
-        # Применяем шумоподавление
-        reduced_noise = noisereduce.reduce_noise(y=data, sr=rate)
-        return reduced_noise
-
     def _transpose_audio(self, semitones):
-        # samples = numpy.array(self.audio_segment.get_array_of_samples())
-        # samples = samples.astype(numpy.float32)
-        # rate = self.audio_segment.frame_rate
-
-        # filtered_samples = self._apply_filter(samples, rate)
-
-        # transposed_samples = librosa.effects.pitch_shift(samples, res_type="soxr_vhq", sr=rate, n_steps=semitones)
-
-        # reduced_noise_samples = self._reduce_noise(transposed_samples, rate)
-
-        # transposed_audio = AudioSegment(
-        #     reduced_noise_samples.tobytes(),
-        #     frame_rate=rate,
-        #     sample_width=self.audio_segment.sample_width,
-        #     channels=self.audio_segment.channels
-        # )
-        # return transposed_audio
         transposed_audio = self.audio_segment._spawn(self.audio_segment.raw_data, overrides={
             "frame_rate": int(self.audio_segment.frame_rate * (2 ** (semitones / 12.0)))
         })
@@ -129,7 +92,6 @@ class AudioTransform:
                 note_files[target_note] = note_file
         return note_files
 
-
     def process_audio(self):
         data = numpy.array(self.audio_segment.get_array_of_samples())
         rate = self.audio_segment.frame_rate
@@ -138,7 +100,6 @@ class AudioTransform:
 
         note = self._frequency_to_note(freq)
         return self._generate_all_notes(note)
-
 
 if __name__ == "__main__":
     with open('file.wav', 'rb') as f:
