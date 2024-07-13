@@ -1,0 +1,6 @@
+.venv/
+pyrightconfig.json
+*.wav
+*.mid
+output/
+txt_output/
