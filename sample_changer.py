@@ -12,6 +12,13 @@ from pydub import AudioSegment
 
 
 
+import numpy
+from io import BytesIO
+from pydub import AudioSegment
+from numpy.typing import NDArray
+from scipy.fft import fft
+from scipy.signal import resample
+
 class AudioTransform:
     notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
@@ -25,14 +32,25 @@ class AudioTransform:
         yf = fft(data)
         xf = numpy.fft.fftfreq(N, 1 / rate)
 
-        # Находим пиковую частоту
-        abs = numpy.abs(yf)
-        idx = numpy.argmax(abs)
-        freq = numpy.abs(xf[idx])
+        # Вычисляем амплитуды
+        abs_yf = numpy.abs(yf)
+
+        # Исключаем нулевые частоты
+        nonzero_indices = numpy.where(xf > 0)
+        xf = xf[nonzero_indices]
+        abs_yf = abs_yf[nonzero_indices]
+
+        # Создаем гистограмму амплитуд частотных составляющих
+        freq_bins = numpy.linspace(0, rate / 2, num=500)
+        hist, bin_edges = numpy.histogram(xf, bins=freq_bins, weights=abs_yf)
+
+        # Находим частоту с максимальной амплитудой в гистограмме
+        max_freq_idx = numpy.argmax(hist)
+        freq = (bin_edges[max_freq_idx] + bin_edges[max_freq_idx + 1]) / 2
 
         return freq
 
-    def _frequency_to_note(self, freq: float):
+    def _frequency_to_note(self, freq: float) -> str:
         A4 = 440.0
         C0 = A4 * pow(2, -4.75)
 
@@ -41,7 +59,7 @@ class AudioTransform:
         n = h % 12
         return f"{self.notes[n]}{octave}"
 
-    def _note_to_frequency(self, note: str):
+    def _note_to_frequency(self, note: str) -> float:
         A4 = 440.0
         C0 = A4 * pow(2, -4.75)
 
@@ -53,43 +71,30 @@ class AudioTransform:
 
         return freq
 
-    def _transpose_audio(self, semitones):
+    def _transpose_audio(self, semitones: float) -> AudioSegment:
+        new_frame_rate = int(self.audio_segment.frame_rate * (2 ** (semitones / 12.0)))
         transposed_audio = self.audio_segment._spawn(self.audio_segment.raw_data, overrides={
-            "frame_rate": int(self.audio_segment.frame_rate * (2 ** (semitones / 12.0)))
-        })
-        return transposed_audio.set_frame_rate(self.audio_segment.frame_rate)
+            "frame_rate": new_frame_rate
+        }).set_frame_rate(self.audio_segment.frame_rate)
+        return transposed_audio
 
-
-    def resample_audio(self, data: NDArray, orig_rate: int, target_rate: int):
-        num_samples = len(data)
-        orig_times = numpy.arange(num_samples) / orig_rate
-        target_times = numpy.arange(0, orig_times[-1], 1 / target_rate)
-        resampled_data = resample(data, len(target_times))
-        return resampled_data
-
-    def _generate_all_notes(self, base_note: str):
+    def _generate_all_notes(self, base_note: str) -> dict[str, BytesIO]:
         note_files: dict[str, BytesIO] = {}
         base_freq = self._note_to_frequency(base_note)
         for octave in range(0, 9):  # Октавы от 0 до 8
-            for i, note in enumerate(self.notes):
+            for note in self.notes:
                 target_note = f"{note}{octave}"
                 target_freq = self._note_to_frequency(target_note)
                 semitones = 12 * numpy.log2(target_freq / base_freq)
-                # transposed_audio = self._transpose_audio(semitones)
-                new_rate = int(self.audio_segment.frame_rate * (2 ** (semitones / 12.0)))
-                resampled_data = self.resample_audio(numpy.array(self.audio_segment.get_array_of_samples()), self.audio_segment.frame_rate, new_rate)
-                resampled_bytes = resampled_data.astype(numpy.int16).tobytes()
-                audio = AudioSegment(
-                    resampled_bytes,
-                    frame_rate=self.audio_segment.frame_rate,
-                    sample_width=self.audio_segment.sample_width,
-                    channels=self.audio_segment.channels
-                )
+
+                # Транспонируем аудиосегмент
+                transposed_audio = self._transpose_audio(semitones)
+
                 note_file = BytesIO()
-                audio.export(note_file, format='wav')
-                # transposed_audio.export(note_file, format='wav')
+                transposed_audio.export(note_file, format='wav')
                 note_file.seek(0)  # Сбрасываем указатель на начало файла
                 note_files[target_note] = note_file
+
         return note_files
 
     def process_audio(self):

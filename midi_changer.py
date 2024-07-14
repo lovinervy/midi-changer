@@ -26,12 +26,27 @@ def get_note_name(midi_note):
     return f"{note}{octave}"
 
 # Создание аудиосегмента для каждой ноты
-def create_note_segment(note, start_time, duration_ms, velocity):
+def create_note_segment(note, start_time, duration_ms, velocity, sustain_ms):
     note_audio = AudioSegment.from_file(note, format='wav')
-    note_segment = note_audio[:duration_ms]  # Обрезаем ноту до нужной продолжительности
-    if len(note_segment) < duration_ms:
-        note_segment = note_segment + AudioSegment.silent(duration=duration_ms - len(note_segment))  # Добавляем тишину, если необходимо
-    # note_segment = note_segment - (1.0 - velocity / 127.0) * 48  # Регулируем громкость по velocity
+
+    # Обрезаем ноту до нужной продолжительности, если она длиннее необходимого
+    if len(note_audio) > duration_ms:
+        note_segment = note_audio[:duration_ms]
+    else:
+        note_segment = note_audio
+
+    # Если длины ноты не хватает, дублируем ноту до нужной длины
+    while len(note_segment) < duration_ms + sustain_ms:
+        note_segment += note_audio
+
+    # Выделяем часть для сустейна
+    if len(note_segment) > duration_ms:
+        sustain_segment = note_segment[duration_ms:duration_ms + sustain_ms].fade_out(sustain_ms)
+        note_segment = note_segment[:duration_ms] + sustain_segment
+    else:
+        sustain_segment = note_segment[:sustain_ms].fade_out(sustain_ms)
+        note_segment += sustain_segment
+
     silence_before = AudioSegment.silent(duration=start_time)  # Добавляем тишину до начала ноты
     return silence_before + note_segment
 
@@ -66,6 +81,8 @@ def create_audio_from_midi(midi_file_path, notes, output_wav_path):
     tempo = get_tempo(mid)  # Default tempo (microseconds per beat)
     ticks = get_total_ticks(mid)
     audio_length = round(ticks / ticks_per_beat * tempo / 1000)
+    print(f"Ticks per beat: {ticks_per_beat}")
+    print(f"Tempo:", tempo)
     print(f"Audio length: {audio_length} milliseconds ≈ {audio_length / 1000 / 60: .2f} minutes")
     output = AudioSegment.silent(audio_length)
     note_start_times = {}
@@ -90,8 +107,10 @@ def create_audio_from_midi(midi_file_path, notes, output_wav_path):
                     duration_ms = current_time_ms - start_time
                     note_name = get_note_name(msg.note)
                     if note_name in notes:
-                        note_segment = create_note_segment(notes[note_name], start_time, duration_ms, msg.velocity)
+                        note_segment = create_note_segment(notes[note_name], start_time, duration_ms, msg.velocity, int(duration_ms / 2))
                         output = output.overlay(note_segment, position=start_time)
+                    else:
+                        print('Not found', note_name)
             if track_time / ticks >= current_percent:
                 print(f"{int(current_percent * 100)} %")
                 current_percent += percent_delta
