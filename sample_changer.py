@@ -4,20 +4,10 @@ from io import BytesIO
 import numpy
 from numpy.typing import NDArray
 
-import scipy
-from scipy.io import wavfile
+from pydub import AudioSegment
 from scipy.fft import fft
 from scipy.signal import resample
-from pydub import AudioSegment
 
-
-
-import numpy
-from io import BytesIO
-from pydub import AudioSegment
-from numpy.typing import NDArray
-from scipy.fft import fft
-from scipy.signal import resample
 
 class AudioTransform:
     notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
