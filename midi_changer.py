@@ -2,7 +2,7 @@ import os
 import argparse
 from io import BytesIO
 
-from mido import MidiFile, tick2second
+from mido import MidiFile, tick2second, bpm2tempo
 from pydub import AudioSegment
 
 from sample_changer import AudioTransform
@@ -74,49 +74,71 @@ def get_total_ticks(midi_file: MidiFile):
     return count
 
 
+def get_midi_duration(midi_file: MidiFile):
+    total_time = 0
+    for track in midi_file.tracks:
+        time = 0
+        for msg in track:
+            time += msg.time
+        total_time = max(total_time, time)
+    return tick2second(total_time, midi_file.ticks_per_beat, bpm2tempo(120))
+
+
 # Создание аудиотрека из MIDI файла
 def create_audio_from_midi(midi_file_path, notes, output_wav_path):
     mid = MidiFile(midi_file_path)
     ticks_per_beat = mid.ticks_per_beat
-    tempo = get_tempo(mid)  # Default tempo (microseconds per beat)
-    ticks = get_total_ticks(mid)
-    audio_length = round(ticks / ticks_per_beat * tempo / 1000)
+    tempo = get_tempo(mid)
+    audio_length = get_midi_duration(mid)
     print(f"Ticks per beat: {ticks_per_beat}")
-    print(f"Tempo:", tempo)
-    print(f"Audio length: {audio_length} milliseconds ≈ {audio_length / 1000 / 60: .2f} minutes")
-    output = AudioSegment.silent(audio_length)
+    print(f"Tempo: {tempo}")
+    print(f"Audio length: {audio_length:.2f} seconds ≈ {int(audio_length // 60)}:{int(audio_length % 60)} minutes")
+
+    output_by_channel = {}
+    for i in range(16):  # MIDI supports 16 channels
+        output_by_channel[i] = AudioSegment.silent(int(audio_length * 1000))
+
     note_start_times = {}
+    track_times = {i: 0 for i in range(16)}  # Отслеживаем время для каждого канала
 
     print("Start")
     percent_delta = 0.1
     current_percent = 0
-    for track in mid.tracks:
-        track_time = 0
+    total_ticks = get_total_ticks(mid)
 
+    for track in mid.tracks:
         for msg in track:
-            track_time += msg.time
-            current_time_ms = tick2second(track_time, ticks_per_beat, tempo) * 1000  # Convert to milliseconds
+            try:
+                if msg.channel not in track_times:
+                    continue
+            except AttributeError:
+                continue
+            track_times[msg.channel] += msg.time
+            current_time_ms = tick2second(track_times[msg.channel], ticks_per_beat, tempo) * 1000  # Convert to milliseconds
 
             if msg.type == 'note_on' and msg.velocity > 0:
                 note_name = get_note_name(msg.note)
                 if note_name in notes:
                     note_start_times[(msg.note, msg.channel)] = current_time_ms
-            elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)):
+            elif msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0):
                 if (msg.note, msg.channel) in note_start_times:
                     start_time = note_start_times.pop((msg.note, msg.channel))
                     duration_ms = current_time_ms - start_time
                     note_name = get_note_name(msg.note)
                     if note_name in notes:
                         note_segment = create_note_segment(notes[note_name], start_time, duration_ms, msg.velocity, int(duration_ms / 2))
-                        output = output.overlay(note_segment, position=start_time)
+                        output_by_channel[msg.channel] = output_by_channel[msg.channel].overlay(note_segment, position=start_time)
                     else:
                         print('Not found', note_name)
-            if track_time / ticks >= current_percent:
+            if track_times[msg.channel] / total_ticks >= current_percent:
                 print(f"{int(current_percent * 100)} %")
                 current_percent += percent_delta
 
+    combined_output = AudioSegment.silent(int(audio_length * 1000))
+    for channel_output in output_by_channel.values():
+        combined_output = combined_output.overlay(channel_output)
 
-    output.export(output_wav_path, format='wav')
+    combined_output.export(output_wav_path, format='wav')
 
 SAMPLE_FOLDER = 'output'
 
