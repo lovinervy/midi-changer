@@ -4,3 +4,4 @@ pyrightconfig.json
 *.mid
 output/
 txt_output/
+__pycache__/
