@@ -3,12 +3,12 @@ import sys
 from mido import MidiFile, tick2second
 from pydub import AudioSegment
 
-from src import SampleTransformer
+from .sample_changer import AudioTransform
 from .utils import get_midi_duration, get_tempo
 
 
 class MidiChanger:
-    def __init__(self, midi: MidiFile, audio_transform: SampleTransformer) -> None:
+    def __init__(self, midi: MidiFile, audio_transform: AudioTransform) -> None:
         self.midi = midi
         self._transform = audio_transform
         self.length = get_midi_duration(midi)
@@ -18,9 +18,7 @@ class MidiChanger:
     def create_note_segment(
         self, instrumental: str, note: str, duration_ms, sustain_ms
     ):
-        note_audio = self._transform.get_sample(note, skip=True)
-        if note_audio is None:
-            return AudioSegment.silent(duration=duration_ms)
+        note_audio = self._transform.get_sample(note)
 
         # Обрезаем ноту до нужной продолжительности, если она длиннее необходимого
         if len(note_audio) > duration_ms:

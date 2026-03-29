@@ -5,15 +5,15 @@ from pathlib import Path
 from io import BytesIO
 
 from mido import MidiFile
-from src import MidiChanger, PianoSampleTransformer, HumanSampleTransformer, SampleTransformer
+from src import MidiChanger, AudioTransform
 
 
-def create_audio(midi_path: str | Path, tone_path: str | Path, method: str = "standard"):
+def create_audio(midi_path: str | Path, tone_path: str | Path):
     with open(tone_path, "rb") as f:
         tone = BytesIO(f.read())
 
     midi = MidiFile(midi_path)
-    transform = HumanSampleTransformer(tone)
+    transform = AudioTransform(tone)
     tone_to_song = MidiChanger(midi, transform)
     return tone_to_song.create()
 
@@ -28,11 +28,10 @@ def main():
     parser.add_argument(
         "--codec", "-c", help="Кодек формата выходного файла", default=None
     )
-    parser.add_argument("--method", help="Метод трансформации аудио")
 
     try:
         args = parser.parse_args()
-        audio = create_audio(args.midi, args.tone, args.method)
+        audio = create_audio(args.midi, args.tone)
 
         output = (
             args.output
